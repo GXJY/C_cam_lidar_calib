@@ -15,11 +15,15 @@
   	<param name = "result_rpy_file" type="string" value="$(find calibration)/debug_data/draw/rpy_txyz_basler.txt"/> -->
 
     <!-- 输入文件夹路径 -->
-    <param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-05-07.bag/camera-73"/>
-	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-05-07.bag/lidar-pcd1"/>
+    <!-- <param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-05-07.bag/camera-73"/>
+	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-05-07.bag/lidar-pcd1"/> -->
 
     <!-- <param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-03-28.bag/camera-73"/>
 	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-03-28.bag/lidar-pcd1"/> -->
+	
+	<param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/image"/>
+	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/pcd"/>
+
 
 
 
@@ -30,7 +34,7 @@
 	<!-- <param name = "no_of_initializations" type="int" value="1"/> -->
 
   	<param name = "min_points_on_plane" type="int" value="700"/>
-  	<param name = "num_views" type="int" value="10"/>
+  	<param name = "num_views" type="int" value="5"/>
 	<!-- 相机和雷达的话题名 -->
   	<!-- <param name = "camera_in_topic" type="string" value="image_topic"/> -->
   	<!-- <param name = "lidar_in_topic" type="string" value="/os1_cloud_node/points/rotated"/> -->

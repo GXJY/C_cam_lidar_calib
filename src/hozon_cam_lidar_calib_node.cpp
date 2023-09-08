@@ -305,22 +305,22 @@ public:
         {
 
             ROS_WARN_STREAM(image_files.front() << " " << pcd_files.front());
-            image_h(image_files.front());
-            pcd_h(pcd_files.front());
-            runSolver();
-            image_files.pop_front();
-            image_files.pop_front();
+            std::string im = image_h(image_files.front());
+            std::string pcd =  pcd_h(pcd_files.front());
+            runSolver(im, pcd);
+            // image_files.pop_front();
+            // image_files.pop_front();
             image_files.pop_front();
             pcd_files.pop_front();
         }
     }
 
-    void image_h(std::string &image_name)
+    std::string image_h(std::string &image_name)
     {
-        ROS_WARN_STREAM("start image_h");
+        std::cout << "start image_h" << std::endl;
         image_in = cv::imread(image_name, cv::IMREAD_COLOR);
 
-        ROS_WARN_STREAM("image in");
+        std::cout << "image in" << std::endl;
         // image_in = cv_bridge::toCvShare(image_read, "bgr8")->image;
         boardDetectedInCam = cv::findChessboardCorners(image_in,
                                                         cv::Size(checkerboard_cols, checkerboard_rows),
@@ -328,10 +328,10 @@ public:
                                                         cv::CALIB_CB_ADAPTIVE_THRESH+
                                                         cv::CALIB_CB_NORMALIZE_IMAGE);
         if (boardDetectedInCam) {
-            ROS_WARN_STREAM("board detect");
+            std::cout << "board detect" << std::endl;
         } 
         else {
-            ROS_WARN_STREAM("board not detect   " << image_name);
+            std::cout << "board not detect   " << image_name << std::endl;
         }
         cv::drawChessboardCorners(image_in,
                                     cv::Size(checkerboard_cols, checkerboard_rows),
@@ -347,7 +347,6 @@ public:
             for(int i = 0; i < projected_points.size(); i++){
                 cv::circle(image_in, projected_points[i], 16, cv::Scalar(0, 255, 0), 10, cv::LINE_AA, 0);
             }
-            ROS_WARN_STREAM("circle point");
             cv::Rodrigues(rvec, C_R_W);
             cv::cv2eigen(C_R_W, c_R_w);
             c_t_w = Eigen::Vector3d(tvec.at<double>(0),
@@ -356,19 +355,20 @@ public:
 
             r3 = c_R_w.block<3,1>(0,2);
             Nc = (r3.dot(c_t_w))*r3;
-            ROS_WARN_STREAM("pnp sloved");
+            std::cout << "pnp sloved" << std::endl;
         }
         cv::resize(image_in, image_resized, cv::Size(), 0.25, 0.25);
-        ROS_WARN_STREAM("view board");
+        std::cout << "view board" << std::endl;
         cv::imshow("view", image_resized);
         cv::waitKey(10);
-        ROS_WARN_STREAM("end image_h");
+        std::cout << "end image_h" << std::endl;
+        return image_name;
 
     }
 
-    void pcd_h(std::string &pcd_name)
+    std::string pcd_h(std::string &pcd_name)
     {
-        ROS_WARN_STREAM("start pcd_h");
+        std::cout << "start pcd_h" << std::endl;
         pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_name, *in_cloud);
 
@@ -422,7 +422,8 @@ public:
             double Z = plane_filtered->points[i].z;
             lidar_points.push_back(Eigen::Vector3d(X, Y, Z));
         }
-        ROS_WARN_STREAM("end pcd_h");
+        std::cout << "end pcd_h" << std::endl;
+        return pcd_name;
     }
     
 
@@ -469,6 +470,7 @@ public:
         std::default_random_engine generator_rot;
         generator_rot.seed(std::chrono::system_clock::now().time_since_epoch().count());
         std::normal_distribution<double> dist(mean_rot, 90);
+        // std::normal_distribution<double> dist(mean_rot, 5);
 
         // Add Gaussian noise
         for (auto& x : data_rot) {
@@ -610,23 +612,25 @@ public:
 //         }
 //     }
 
-    void runSolver() {
-        ROS_WARN_STREAM("start solve" << lidar_points.size());
+    void runSolver(std::string &image_name, std::string &pcd_name) {
+        std::cout << "start solve" << lidar_points.size() << std::endl;
         if (lidar_points.size() > min_points_on_plane && boardDetectedInCam) {
-            ROS_WARN_STREAM("r3.dot(r3_old)  " << r3.dot(r3_old));
+            std::cout << "r3.dot(r3_old)  " << r3.dot(r3_old) << std::endl;
             if (r3.dot(r3_old) < 0.90) {
                 r3_old = r3;
                 all_normals.push_back(Nc);
                 all_lidar_points.push_back(lidar_points);
                 ROS_ASSERT(all_normals.size() == all_lidar_points.size());
-                ROS_INFO_STREAM("Recording View number: " << all_normals.size());
+                std::cout << "Recording View number: " << all_normals.size() << std::endl;
+                std::cout << image_name << std::endl;
+                std::cout << pcd_name << std::endl;
                 if (all_normals.size() >= num_views) {
-                    ROS_INFO_STREAM("Starting optimization...");
+                    std::cout << "Starting optimization..." << std::endl;
                     // init_file.open(initializations_file);
 
                     for(int counter = 0; counter < no_of_initializations; counter++) {
                         /// Start Optimization here
-                        ROS_WARN_STREAM("solve num  " << counter + 1 << " of " << no_of_initializations);
+                        std::cout << "solve num  " << counter + 1 << " of " << no_of_initializations << std::endl;
 
                         /// Step 1: Initialization
                         Eigen::Matrix4d transformation_matrix = Eigen::Matrix4d::Identity();
@@ -647,7 +651,7 @@ public:
                         R_t(3) = Translation(0);
                         R_t(4) = Translation(1);
                         R_t(5) = Translation(2);
-                        ROS_WARN_STREAM("end solve initial");
+                        std::cout << "end solve initial" << std::endl;
                         /// Step2: Defining the Loss function (Can be NULL)
 //                    ceres::LossFunction *loss_function = new ceres::CauchyLoss(1.0);
 //                    ceres::LossFunction *loss_function = new ceres::HuberLoss(0.1);
@@ -668,7 +672,7 @@ public:
                                 problem.AddResidualBlock(cost_function, loss_function, R_t.data());
                             }
                         }
-                        ROS_WARN_STREAM("end Form the Optimization Problem");
+                        std::cout << "end Form the Optimization Problem" << std::endl;
 
 
                         /// Step 4: Solve it
@@ -677,10 +681,10 @@ public:
                         options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
                         options.minimizer_progress_to_stdout = false;
                         ceres::Solver::Summary summary;
-                        ROS_WARN_STREAM("start solve");
+                        std::cout << "start solve" << std::endl;
                         ceres::Solve(options, &problem, &summary);
 //                        std::cout << summary.FullReport() << '\n';
-                        ROS_WARN_STREAM("end solve");
+                        std::cout << "end solve" << std::endl;
 
 
 
@@ -703,7 +707,7 @@ public:
                                   << R_t[3] << "," << R_t[4] << "," << R_t[5] << std::endl;
 
                         /// Step 5: Covariance Estimation
-                        ROS_WARN_STREAM("start Covariance Estimation");
+                        std::cout << "start Covariance Estimation" << std::endl;
                         ceres::Covariance::Options options_cov;
                         ceres::Covariance covariance(options_cov);
                         std::vector<std::pair<const double*, const double*> > covariance_blocks;
@@ -746,7 +750,7 @@ public:
                         std::cout << "sigma_rot_xx = " << sigma_rot_xx*180/M_PI << "\t"
                                   << "sigma_rot_yy = " << sigma_rot_yy*180/M_PI << "\t"
                                   << "sigma_rot_zz = " << sigma_rot_zz*180/M_PI << std::endl;
-                        ROS_WARN_STREAM("end Covariance Estimation");
+                        std::cout << "end Covariance Estimation" << std::endl;
 
                         std::ofstream results;
                         results.open(result_str, std::ios::out|std::ios::app);
@@ -765,7 +769,7 @@ public:
                         results_sigma.close();
                         
 
-                        ROS_INFO_STREAM("No of initialization: " << counter);
+                        std::cout << "No of initialization: " << counter << std::endl;
                     }
                     // ROS_WARN_STREAM("end solve all");
                     std::cout << "end solve all" << std::endl;
@@ -775,11 +779,11 @@ public:
 
                 }
             } else {
-                ROS_WARN_STREAM("Not enough Rotation, view not recorded");
+                std::cout << "Not enough Rotation, view not recorded" << std::endl;
             }
         } else {
             if(!boardDetectedInCam)
-                ROS_WARN_STREAM("Checker-board not detected in Image.");
+                std::cout << "Checker-board not detected in Image." << std::endl;
             else {
                 ROS_WARN_STREAM("Checker Board Detected in Image?: " << boardDetectedInCam << "\t" <<
                 "No of LiDAR pts: " << lidar_points.size() << " (Check if this is less than threshold) ");
