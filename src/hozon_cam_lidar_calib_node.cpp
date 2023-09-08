@@ -307,7 +307,10 @@ public:
             ROS_WARN_STREAM(image_files.front() << " " << pcd_files.front());
             std::string im = image_h(image_files.front());
             std::string pcd =  pcd_h(pcd_files.front());
-            runSolver(im, pcd);
+            if(runSolver(im, pcd)) {
+                std::cout << "end end end" << std::endl;
+                break;
+            }
             // image_files.pop_front();
             // image_files.pop_front();
             image_files.pop_front();
@@ -612,7 +615,7 @@ public:
 //         }
 //     }
 
-    void runSolver(std::string &image_name, std::string &pcd_name) {
+    bool runSolver(std::string &image_name, std::string &pcd_name) {
         std::cout << "start solve" << lidar_points.size() << std::endl;
         if (lidar_points.size() > min_points_on_plane && boardDetectedInCam) {
             std::cout << "r3.dot(r3_old)  " << r3.dot(r3_old) << std::endl;
@@ -773,6 +776,7 @@ public:
                     }
                     // ROS_WARN_STREAM("end solve all");
                     std::cout << "end solve all" << std::endl;
+                    return true;
                     
                     // nh.shutdown();
                     // ros::shutdown();
