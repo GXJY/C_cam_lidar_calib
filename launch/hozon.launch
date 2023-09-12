@@ -21,9 +21,12 @@
     <!-- <param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-03-28.bag/camera-73"/>
 	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/1_2023-09-04-12-03-28.bag/lidar-pcd1"/> -->
 	
-	<param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/image"/>
-	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/pcd"/>
+	<!-- <param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/image"/>
+	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try/pcd"/> -->
 
+
+	<param name = "image_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try_2/image"/>
+	<param name = "pcd_folder_path" type="string" value="/media/pw/data/cjy_data/cjy/try_2/pcd"/>
 
 
 
@@ -31,20 +34,28 @@
   	<param name = "result_file" type="string" value="$(find cam_lidar_calib)/res/C_T_L_.txt"/>
   	<param name = "result_rpy_file" type="string" value="$(find cam_lidar_calib)/res/rpy_txyz_.txt"/>
   	<param name = "result_sigma_file" type="string" value="$(find cam_lidar_calib)/res/sigma_.txt"/>
-	<!-- <param name = "no_of_initializations" type="int" value="1"/> -->
 
   	<param name = "min_points_on_plane" type="int" value="700"/>
-  	<param name = "num_views" type="int" value="5"/>
+  	<param name = "num_views" type="int" value="13"/>
+		<param name = "no_of_initializations" type="int" value="1"/>
 	<!-- 相机和雷达的话题名 -->
   	<!-- <param name = "camera_in_topic" type="string" value="image_topic"/> -->
   	<!-- <param name = "lidar_in_topic" type="string" value="/os1_cloud_node/points/rotated"/> -->
 
 	<!-- 直通滤波 -->
-	<param name="x_min" value="0.75"/>
+		<!-- 
+		<param name="x_min" value="0.75"/>
     <param name="x_max" value="6"/>
     <param name="y_min" value="-2"/>
     <param name="y_max" value="2"/>
     <param name="z_min" value="-1"/>
+    <param name="z_max" value="3"/>
+		-->
+		<param name="x_min" value="1"/>
+    <param name="x_max" value="10"/>
+    <param name="y_min" value="-10"/>
+    <param name="y_max" value="4"/>
+    <param name="z_min" value="-0.33"/>
     <param name="z_max" value="3"/>
     <param name="ransac_threshold" value="0.01"/>
 
