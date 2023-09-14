@@ -22,6 +22,11 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 
+#include <pcl/features/normal_3d.h>
+#include <pcl/search/kdtree.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
+
 #include <Eigen/Dense>
 // #include <Eigen/Core>
 // #include <Eigen/Geometry>
@@ -82,7 +87,8 @@ class camLidarCalib {
   Eigen::Vector3d r3_old;
   Eigen::Vector3d Nc;
   // Eigen::MatrixXd C_T_L(3, 4);
-  Eigen::MatrixXd C_T_L = Eigen::MatrixXd::Zero(3, 4);
+  Eigen::Matrix4d C_T_L = Eigen::Matrix4d::Identity();
+  Eigen::Matrix4d C_T_L_tf = Eigen::Matrix4d::Identity();
 
   std::vector<Eigen::Vector3d> lidar_points;
   std::vector<std::vector<Eigen::Vector3d> > all_lidar_points;
@@ -215,7 +221,7 @@ class camLidarCalib {
     // _2)); cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("points_out",
     // 1);
 
-    projection_matrix = cv::Mat::zeros(3, 3, CV_64F);
+    projection_matrix = cv::Mat::eye(3, 3, CV_64F);
     distCoeff = cv::Mat::zeros(5, 1, CV_64F);
     boardDetectedInCam = false;
     tvec = cv::Mat::zeros(3, 1, CV_64F);
@@ -302,7 +308,7 @@ class camLidarCalib {
     }
     sort(image_files.begin(), image_files.end());
     sort(pcd_files.begin(), pcd_files.end());
-    int max_file_num = std::max(image_files.size(), pcd_files.size());
+    int max_file_num = std::max(image_files.size(), pcd_files.size()); 
 
     while (!image_files.empty() && !pcd_files.empty()) {
       std::string im = image_files.front();
@@ -317,7 +323,7 @@ class camLidarCalib {
         // while (!image_files.empty() && !pcd_files.empty()) {
         // }
         l2c_project(image_files.back(), pcd_files.back());
-        // break;
+        break;
         // image_files.clear();
         // pcd_files.clear();
       }
@@ -348,6 +354,8 @@ class camLidarCalib {
       // rvec, tvec, false, CV_ITERATIVE);
       cv::solvePnP(object_points, image_points, projection_matrix, distCoeff,
                    rvec, tvec, false);
+      std::cout << "rvec:" << std::endl << rvec << std::endl; 
+      std::cout << "tvec:" << std::endl << tvec << std::endl;
 
       projected_points.clear();
       cv::projectPoints(object_points, rvec, tvec, projection_matrix, distCoeff,
@@ -368,7 +376,7 @@ class camLidarCalib {
     cv::resize(image_in, image_resized, cv::Size(), 0.25, 0.25);
     std::cout << "view board" << std::endl;
     cv::imshow("view", image_resized);
-    cv::waitKey(10);
+    cv::waitKey(100);
     std::cout << "end image_h" << std::endl;
   }
 
@@ -377,10 +385,6 @@ class camLidarCalib {
     pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud(
         new pcl::PointCloud<pcl::PointXYZ>);
     pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_name, *in_cloud);
-
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_in_cloud.pcd",
-    //     *in_cloud);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered_x(
         new pcl::PointCloud<pcl::PointXYZ>);
@@ -400,9 +404,6 @@ class camLidarCalib {
     pass_x.setFilterLimits(x_min, x_max);
     pass_x.filter(*cloud_filtered_x);
 
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_cloud_x.pcd",
-    //     *cloud_filtered_x);
 
     pcl::PassThrough<pcl::PointXYZ> pass_y;
     pass_y.setInputCloud(cloud_filtered_x);
@@ -410,9 +411,6 @@ class camLidarCalib {
     pass_y.setFilterLimits(y_min, y_max);
     pass_y.filter(*cloud_filtered_y);
 
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_cloud_y.pcd",
-    //     *cloud_filtered_y);
 
     pcl::PassThrough<pcl::PointXYZ> pass_z;
     pass_z.setInputCloud(cloud_filtered_y);
@@ -420,28 +418,44 @@ class camLidarCalib {
     pass_z.setFilterLimits(z_min, z_max);
     pass_z.filter(*cloud_filtered_z);
 
-    std::cout << "writing pcd" << std::endl;
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_cloud_z.pcd",
-    //     *cloud_filtered_z);
+    // filter ground point
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+    ne.setInputCloud(cloud_filtered_z);
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+        new pcl::search::KdTree<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr fil_ground_map(
+        new pcl::PointCloud<pcl::PointXYZ>);
+    ne.setSearchMethod(tree);
+    ne.setKSearch(10);
+    pcl::PointCloud<pcl::Normal>::Ptr f_normals(new
+    pcl::PointCloud<pcl::Normal>); ne.compute(*f_normals);
 
-    std::cout << "finish wrinting pcd" << std::endl;
+    for (size_t i = 0; i < f_normals->size(); ++i) {
+      if(f_normals->points[i].normal_z > 0.9){
+        continue;
+      }
+      else{
+        pcl::PointXYZ pt;
+        pt.x = cloud_filtered_z->points[i].x;
+        pt.y = cloud_filtered_z->points[i].y;
+        pt.z = cloud_filtered_z->points[i].z;
+        fil_ground_map->push_back(pt);
+      }
+    }
+
+    // 将结果保存为新的PCD文件
 
     /// Plane Segmentation
     pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p(
-        new pcl::SampleConsensusModelPlane<pcl::PointXYZ>(cloud_filtered_z));
+        new pcl::SampleConsensusModelPlane<pcl::PointXYZ>(fil_ground_map));
     pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);
     ransac.setDistanceThreshold(ransac_threshold);
     ransac.computeModel();
     std::vector<int> inliers_indicies;
     ransac.getInliers(inliers_indicies);
-    pcl::copyPointCloud<pcl::PointXYZ>(*cloud_filtered_z, inliers_indicies,
+    pcl::copyPointCloud<pcl::PointXYZ>(*fil_ground_map, inliers_indicies,
                                        *plane);
 
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/"
-    //     "output_cloud_plane.pcd",
-    //     *plane);
 
     /// Statistical Outlier Removal
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
@@ -459,48 +473,142 @@ class camLidarCalib {
       lidar_points.push_back(Eigen::Vector3d(X, Y, Z));
     }
 
-    // pcl::io::savePCDFileASCII(
-    //     "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/"
-    //     "output_cloud_plane_in.pcd",
-    //     *plane_filtered);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output_cloud_x.pcd",
+        *cloud_filtered_x);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output_cloud_y.pcd",
+        *cloud_filtered_y);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output_cloud_z.pcd",
+        *cloud_filtered_z);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/ground_removed_cloud.pcd",
+         *fil_ground_map);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output_cloud_plane.pcd",
+        *plane);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output_cloud_plane_in.pcd",
+        *plane_filtered);
 
     std::cout << "end pcd_h" << std::endl;
   }
 
   Eigen::Matrix4f ll_cc_p() {
-    // 相机-车 rpy-q
-    float c_roll = 0.013;   
-    float c_pitch = 3.498;  
-    float c_yaw = 0.013;    
+    // 73相机-车 rpy   deg - rad
+    float c_roll = 0.013 / 180 * M_PI;   
+    float c_pitch = 3.498 / 180 * M_PI;  
+    float c_yaw = 0.224 / 180 * M_PI;    
 
     Eigen::Matrix3f cam_rotation_matrix;
-    cam_rotation_matrix = Eigen::AngleAxisf(c_roll, Eigen::Vector3f::UnitZ())
+    cam_rotation_matrix = Eigen::AngleAxisf(c_yaw, Eigen::Vector3f::UnitZ())
                         * Eigen::AngleAxisf(c_pitch, Eigen::Vector3f::UnitY())
-                        * Eigen::AngleAxisf(c_yaw, Eigen::Vector3f::UnitX());
+                        * Eigen::AngleAxisf(c_roll, Eigen::Vector3f::UnitX());
+                        
     Eigen::Vector3f t_camera(1.854933, 0.003, 1.297982); 
 
     Eigen::Matrix4f cam_transformation_matrix = Eigen::Matrix4f::Identity();
-    cam_transformation_matrix.block<3, 3>(0, 0) = cam_rotation_matrix;
+    
+    cam_transformation_matrix.block<3, 3>(0, 0) = cam_rotation_matrix; //
     cam_transformation_matrix.block<3, 1>(0, 3) = t_camera;
     
+    // // 71相机-车 rpy-q
+    // float c_roll = 1.053;   
+    // float c_pitch = 2.781;  
+    // float c_yaw = 0.091;    
 
-    float l_roll = 0.05046696;   
-    float l_pitch = 0.54040612;  
-    float l_yaw = 26.47351612;    
+    // Eigen::Matrix3f cam_rotation_matrix;
+    // cam_rotation_matrix = Eigen::AngleAxisf(c_roll, Eigen::Vector3f::UnitZ())
+    //                     * Eigen::AngleAxisf(c_pitch, Eigen::Vector3f::UnitY())
+    //                     * Eigen::AngleAxisf(c_yaw, Eigen::Vector3f::UnitX());
+    // Eigen::Vector3f t_camera(1.865162, -0.023901, 1.29708); 
+
+    // Eigen::Matrix4f cam_transformation_matrix = Eigen::Matrix4f::Identity();
+    // cam_transformation_matrix.block<3, 3>(0, 0) = cam_rotation_matrix;
+    // cam_transformation_matrix.block<3, 1>(0, 3) = t_camera;
+
+    // left-lidar - 车
+    float l_roll = 0.05046696 / 180 * M_PI;   
+    float l_pitch = 0.54040612 / 180 * M_PI;  
+    float l_yaw = 26.47351612 / 180 * M_PI;    
     Eigen::Matrix3f li_rotation_matrix;
-    li_rotation_matrix = Eigen::AngleAxisf(l_roll, Eigen::Vector3f::UnitZ())
+    li_rotation_matrix = Eigen::AngleAxisf(l_yaw, Eigen::Vector3f::UnitZ())
                         * Eigen::AngleAxisf(l_pitch, Eigen::Vector3f::UnitY())
-                        * Eigen::AngleAxisf(l_yaw, Eigen::Vector3f::UnitX());
+                        * Eigen::AngleAxisf(l_roll, Eigen::Vector3f::UnitX());
     Eigen::Vector3f t_lidar(3.61345053, 0.7944809, 0.41564371); 
 
     Eigen::Matrix4f li_transformation_matrix = Eigen::Matrix4f::Identity();
     li_transformation_matrix.block<3, 3>(0, 0) = li_rotation_matrix;
     li_transformation_matrix.block<3, 1>(0, 3) = t_lidar;
 
-    Eigen::Matrix4f L2C = cam_transformation_matrix * li_transformation_matrix;
-    // Eigen::Matrix4f L2C = cam_transformation_matrix.inverse() * li_transformation_matrix;
-    return L2C;
+    // Eigen::Matrix4f L2C = cam_transformation_matrix * li_transformation_matrix;
+    Eigen::Matrix4f L2C = cam_transformation_matrix.inverse() * li_transformation_matrix;
+    Eigen::Matrix4f cam_vehicle_tf;
+    cam_vehicle_tf << 0, -1, 0, 0,  
+                      0, 0, -1, 0,  
+                      1, 0, 0, 0,  
+                      0, 0, 0, 1;
+    return cam_vehicle_tf * L2C;
 
+  }
+
+  Eigen::Matrix4d llll_cc_p() {
+    // 73相机-车 rpy   deg - rad
+    double c_roll = 0.013 / 180 * M_PI;   
+    double c_pitch = 3.498 / 180 * M_PI;  
+    double c_yaw = 0.224 / 180 * M_PI;    
+
+    Eigen::Matrix3d cam_rotation_matrix;
+    cam_rotation_matrix = Eigen::AngleAxisd(c_yaw, Eigen::Vector3d::UnitZ())
+                        * Eigen::AngleAxisd(c_pitch, Eigen::Vector3d::UnitY())
+                        * Eigen::AngleAxisd(c_roll, Eigen::Vector3d::UnitX());
+                        
+    Eigen::Vector3d t_camera(1.854933, 0.003, 1.297982); 
+
+    Eigen::Matrix4d cam_transformation_matrix = Eigen::Matrix4d::Identity();
+    
+    cam_transformation_matrix.block<3, 3>(0, 0) = cam_rotation_matrix; //
+    cam_transformation_matrix.block<3, 1>(0, 3) = t_camera;
+    
+    // // 71相机-车 rpy-q
+    // double c_roll = 1.053;   
+    // double c_pitch = 2.781;  
+    // double c_yaw = 0.091;    
+
+    // Eigen::Matrix3f cam_rotation_matrix;
+    // cam_rotation_matrix = Eigen::AngleAxisf(c_roll, Eigen::Vector3f::UnitZ())
+    //                     * Eigen::AngleAxisf(c_pitch, Eigen::Vector3f::UnitY())
+    //                     * Eigen::AngleAxisf(c_yaw, Eigen::Vector3f::UnitX());
+    // Eigen::Vector3f t_camera(1.865162, -0.023901, 1.29708); 
+
+    // Eigen::Matrix4f cam_transformation_matrix = Eigen::Matrix4f::Identity();
+    // cam_transformation_matrix.block<3, 3>(0, 0) = cam_rotation_matrix;
+    // cam_transformation_matrix.block<3, 1>(0, 3) = t_camera;
+
+    // left-lidar - 车
+    double l_roll = 0.05046696 / 180 * M_PI;   
+    double l_pitch = 0.54040612 / 180 * M_PI;  
+    double l_yaw = 26.47351612 / 180 * M_PI;    
+    Eigen::Matrix3d li_rotation_matrix;
+    li_rotation_matrix = Eigen::AngleAxisd(l_yaw, Eigen::Vector3d::UnitZ())
+                        * Eigen::AngleAxisd(l_pitch, Eigen::Vector3d::UnitY())
+                        * Eigen::AngleAxisd(l_roll, Eigen::Vector3d::UnitX());
+    Eigen::Vector3d t_lidar(3.61345053, 0.7944809, 0.41564371); 
+
+    Eigen::Matrix4d li_transformation_matrix = Eigen::Matrix4d::Identity();
+    li_transformation_matrix.block<3, 3>(0, 0) = li_rotation_matrix;
+    li_transformation_matrix.block<3, 1>(0, 3) = t_lidar;
+
+    Eigen::Matrix4d L2C = cam_transformation_matrix.inverse() * li_transformation_matrix;
+
+    Eigen::Matrix4d cam_vehicle_tf;
+    cam_vehicle_tf << 0, -1, 0, 0,  
+                      0, 0, -1, 0,  
+                      1, 0, 0, 0,  
+                      0, 0, 0, 1;
+
+    return cam_vehicle_tf * L2C;
   }
 
   //
@@ -583,8 +691,12 @@ class camLidarCalib {
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr ccctransformed_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 
+
+
     Eigen::Matrix4f transform = Eigen::Matrix4f::Identity();  //
-    Eigen::MatrixXf C_T_L_floatMatrix = C_T_L.cast<float>();
+    // Eigen::Matrix4f C_T_L_floatMatrix = C_T_L_tf.cast<float>();
+
+    Eigen::Matrix4f C_T_L_floatMatrix = C_T_L.cast<float>();
 
     // transform.block<3,3>(0, 0) = C_T_L.block(0, 0, 3, 3);  //    设置旋转矩阵 R
     // transform.block<3,1>(0, 3) = C_T_L.block(0, 3, 3, 1);  //    设置平移向量 t
@@ -599,8 +711,12 @@ class camLidarCalib {
 
     pcl::transformPointCloud(*pre_cloud, *ccctransformed_cloud, ll_cc_p());
     
-    // cv::resize(pre_image, image_resized, cv::Size(), 0.25, 0.25);
-
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/transformed.pcd",
+        *transformed_cloud);
+    pcl::io::savePCDFileASCII(
+        "/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/ccctransformed.pcd",
+        *ccctransformed_cloud);
     cv::Mat projected_image = pre_image.clone();
 
     cv::Mat projected_ccimage = pre_image.clone();
@@ -623,7 +739,8 @@ class camLidarCalib {
 
     }
     // 保存并显示带有投影点的相机图像
-    cv::imwrite("/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output/output.png", projected_image);
+    cv::imwrite("/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/output.png", projected_image);
+    cv::resize(projected_image, projected_image, cv::Size(), 0.25, 0.25);
     cv::imshow("Projected Image", projected_image);
     while (true) {
         int key = cv::waitKey(10);
@@ -646,18 +763,14 @@ class camLidarCalib {
 
     }
     // 保存并显示带有投影点的相机图像
-    cv::imwrite("/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output/ccoutput.png", projected_ccimage);
-    cv::imshow("Projected Image", projected_ccimage);
+    cv::imwrite("/home/pw/cjy_home/calib_ws/src/C_cam_lidar_calib/output_2_73/ccoutput.png", projected_ccimage);
+    cv::resize(projected_ccimage, projected_ccimage, cv::Size(), 0.25, 0.25);
+    cv::imshow("Projected ccimage", projected_ccimage);
     while (true) {
         int key = cv::waitKey(10);
         if (key == 27)  // 按下ESC键，退出循环
             break;
     }
-
-
-
-
-
   }
 
   void readCameraParams(std::string cam_config_file_path, int &image_height,
@@ -879,8 +992,10 @@ class camLidarCalib {
                       << no_of_initializations << std::endl;
 
             /// Step 1: Initialization
-            Eigen::Matrix4d transformation_matrix = Eigen::Matrix4d::Identity();
-            addGaussianNoise(transformation_matrix);
+            // Eigen::Matrix4d transformation_matrix = Eigen::Matrix4d::Identity();
+            Eigen::Matrix4d transformation_matrix = llll_cc_p();
+            
+            // addGaussianNoise(transformation_matrix);
             Eigen::Matrix3d Rotn = transformation_matrix.block(0, 0, 3, 3);
             Eigen::Vector3d axis_angle;
             ceres::RotationMatrixToAngleAxis(Rotn.data(), axis_angle.data());
@@ -888,8 +1003,8 @@ class camLidarCalib {
             Eigen::Vector3d Translation =
                 transformation_matrix.block(0, 3, 3, 1);
 
-            Eigen::Vector3d rpy_init = Rotn.eulerAngles(2, 1, 0) * 180 / M_PI;
-            Eigen::Vector3d tran_init = transformation_matrix.block(0, 3, 3, 1);
+            // Eigen::Vector3d rpy_init = Rotn.eulerAngles(2, 1, 0) * 180 / M_PI;
+            // Eigen::Vector3d tran_init = transformation_matrix.block(0, 3, 3, 1);
 
             Eigen::VectorXd R_t(6);
             R_t(0) = axis_angle(0);
@@ -900,10 +1015,9 @@ class camLidarCalib {
             R_t(5) = Translation(2);
             std::cout << "end solve initial" << std::endl;
             /// Step2: Defining the Loss function (Can be NULL)
-            //                    ceres::LossFunction *loss_function = new
-            //                    ceres::CauchyLoss(1.0); ceres::LossFunction
-            //                    *loss_function = new ceres::HuberLoss(0.1);
-            ceres::LossFunction *loss_function = NULL;
+            //  ceres::LossFunction *loss_function = new ceres::CauchyLoss(1.0); 
+            ceres::LossFunction *loss_function = new ceres::HuberLoss(0.1);
+            // ceres::LossFunction *loss_function = NULL;
 
             /// Step 3: Form the Optimization Problem
             ceres::Problem problem;
@@ -925,13 +1039,13 @@ class camLidarCalib {
             /// Step 4: Solve it
             ceres::Solver::Options options;
             options.max_num_iterations = 200;
-            options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+            options.linear_solver_type = ceres::DENSE_SCHUR;
+            options.minimizer_type = ceres::TRUST_REGION;   // 使用LM算法
             options.minimizer_progress_to_stdout = false;
             ceres::Solver::Summary summary;
             std::cout << "start solve" << std::endl;
             ceres::Solve(options, &problem, &summary);
-            //                        std::cout << summary.FullReport() <<
-            //                        '\n';
+            std::cout << summary.FullReport() << std::endl;
             std::cout << "end solve" << std::endl;
             // cv::destroyWindow("view");
 
@@ -939,8 +1053,17 @@ class camLidarCalib {
             ceres::AngleAxisToRotationMatrix(R_t.data(), Rotn.data());
             C_T_L.block(0, 0, 3, 3) = Rotn;
             C_T_L.block(0, 3, 3, 1) = Eigen::Vector3d(R_t[3], R_t[4], R_t[5]);
+
+            Eigen::Matrix4d cam_vehicle_tf;
+            cam_vehicle_tf << 0, -1, 0, 0,  
+                              0, 0, -1, 0,  
+                              1, 0, 0, 0,  
+                              0, 0, 0, 1;
+
+            C_T_L_tf = cam_vehicle_tf * C_T_L;
             std::cout << "RPY = " << Rotn.eulerAngles(2, 1, 0) * 180 / M_PI
                       << std::endl;
+            // std::cout << "t = " << C_T_L_tf.block(0, 3, 3, 1) << std::endl;
             std::cout << "t = " << C_T_L.block(0, 3, 3, 1) << std::endl;
 
             // init_file << rpy_init(0) << "," << rpy_init(1) << "," <<
@@ -952,13 +1075,13 @@ class camLidarCalib {
             // Rotn.eulerAngles(0, 1, 2)(2)*180/M_PI << ","
             //           << R_t[3] << "," << R_t[4] << "," << R_t[5] << "\n";
 
-            std::cout << rpy_init(0) << "," << rpy_init(1) << "," << rpy_init(2)
-                      << "," << tran_init(0) << "," << tran_init(1) << ","
-                      << tran_init(2) << std::endl;
-            std::cout << Rotn.eulerAngles(2, 1, 0)(0) * 180 / M_PI << ","
-                      << Rotn.eulerAngles(2, 1, 0)(1) * 180 / M_PI << ","
-                      << Rotn.eulerAngles(2, 1, 0)(2) * 180 / M_PI << ","
-                      << R_t[3] << "," << R_t[4] << "," << R_t[5] << std::endl;
+            // std::cout << rpy_init(0) << "," << rpy_init(1) << "," << rpy_init(2)
+            //           << "," << tran_init(0) << "," << tran_init(1) << ","
+            //           << tran_init(2) << std::endl;
+            // std::cout << Rotn.eulerAngles(2, 1, 0)(0) * 180 / M_PI << ","
+            //           << Rotn.eulerAngles(2, 1, 0)(1) * 180 / M_PI << ","
+            //           << Rotn.eulerAngles(2, 1, 0)(2) * 180 / M_PI << ","
+            //           << R_t[3] << "," << R_t[4] << "," << R_t[5] << std::endl;
 
             /// Step 5: Covariance Estimation
             std::cout << "start Covariance Estimation" << std::endl;
@@ -994,13 +1117,6 @@ class camLidarCalib {
             double sigma_rot_yy = sqrt(cov_mat_TransRot(4, 4));
             double sigma_rot_zz = sqrt(cov_mat_TransRot(5, 5));
 
-            // std::vector<double> cov_sigma;
-            // cov_sigma.push_back(sigma_xx);
-            // cov_sigma.push_back(sigma_yy);
-            // cov_sigma.push_back(sigma_zz);
-            // cov_sigma.push_back(sigma_rot_xx);
-            // cov_sigma.push_back(sigma_rot_yy);
-            // cov_sigma.push_back(sigma_rot_zz);
             std::cout << "sigma_xx = " << sigma_xx << "\t"
                       << "sigma_yy = " << sigma_yy << "\t"
                       << "sigma_zz = " << sigma_zz << std::endl;
@@ -1013,13 +1129,12 @@ class camLidarCalib {
 
             std::ofstream results;
             results.open(result_str, std::ios::out | std::ios::app);
-            results << C_T_L << "\n\n";
+            results << C_T_L_tf << "\n\n";
             results.close();
 
             std::ofstream results_rpy;
             results_rpy.open(result_rpy, std::ios::out | std::ios::app);
-            results_rpy << Rotn.eulerAngles(2, 1, 0) * 180 / M_PI << "\n"
-                        << C_T_L.block(0, 3, 3, 1) << "\n\n";
+            results_rpy << Rotn.eulerAngles(2, 1, 0) * 180 / M_PI << "\n\n";
             results_rpy.close();
 
             std::ofstream results_sigma;
